@@ -3,6 +3,7 @@ package backoff
 import (
 	"context"
 	"iter"
+	"math"
 	"math/rand/v2"
 	"time"
 )
@@ -13,9 +14,8 @@ type config struct {
 	initialDelay time.Duration
 	maxDelay     time.Duration
 	multiplier   float64
-	jitter       bool
+	jitterFactor float64
 	maxRetries   int
-	infinite     bool
 }
 
 func defaultConfig() *config {
@@ -23,9 +23,8 @@ func defaultConfig() *config {
 		initialDelay: 100 * time.Millisecond,
 		maxDelay:     30 * time.Second,
 		multiplier:   2.0,
-		jitter:       true,
-		maxRetries:   10,
-		infinite:     false,
+		jitterFactor: 0.0,
+		maxRetries:   math.MaxInt,
 	}
 }
 
@@ -56,9 +55,12 @@ func Multiplier(m float64) Option {
 	}
 }
 
-func Jitter(enabled bool) Option {
+func JitterFactor(factor float64) Option {
 	return func(c *config) {
-		c.jitter = enabled
+		if factor < 0 {
+			factor = 0
+		}
+		c.jitterFactor = factor
 	}
 }
 
@@ -71,53 +73,39 @@ func MaxRetries(retries int) Option {
 	}
 }
 
-func Infinite() Option {
-	return func(c *config) {
-		c.infinite = true
-	}
-}
-
 func Iter(options ...Option) iter.Seq[time.Duration] {
 	cfg := defaultConfig()
 	for _, opt := range options {
 		opt(cfg)
 	}
-	
+
 	return func(yield func(time.Duration) bool) {
 		delay := cfg.initialDelay
 		if cfg.maxDelay < cfg.initialDelay {
 			cfg.maxDelay = cfg.initialDelay
 		}
-		
+
 		attempt := 0
-		for {
-			if !cfg.infinite && attempt >= cfg.maxRetries {
-				break
-			}
-			
+		for attempt < cfg.maxRetries {
+
 			currentDelay := delay
-			
-			if cfg.jitter {
-				jitterRange := float64(delay) * 0.1
+
+			if cfg.jitterFactor > 0 {
+				jitterRange := float64(delay) * cfg.jitterFactor
 				jitter := (rand.Float64() - 0.5) * 2 * jitterRange
 				currentDelay = time.Duration(float64(delay) + jitter)
 			}
-			
+
 			if currentDelay > cfg.maxDelay {
 				currentDelay = cfg.maxDelay
 			}
-			
+
 			if !yield(currentDelay) {
 				return
 			}
-			
+
 			nextDelay := time.Duration(float64(delay) * cfg.multiplier)
-			if nextDelay > cfg.maxDelay {
-				delay = cfg.maxDelay
-			} else {
-				delay = nextDelay
-			}
-			
+			delay = min(cfg.maxDelay, nextDelay)
 			attempt++
 		}
 	}
@@ -130,12 +118,12 @@ func Retry[T any](fn func() (T, error), options ...Option) (T, error) {
 func RetryWithContext[T any](ctx context.Context, fn func() (T, error), options ...Option) (T, error) {
 	var lastErr error
 	var result T
-	
+
 	result, lastErr = fn()
 	if lastErr == nil {
 		return result, nil
 	}
-	
+
 	for delay := range Iter(options...) {
 		select {
 		case <-ctx.Done():
@@ -147,6 +135,6 @@ func RetryWithContext[T any](ctx context.Context, fn func() (T, error), options 
 			}
 		}
 	}
-	
+
 	return result, lastErr
 }

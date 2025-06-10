@@ -16,7 +16,7 @@ func ExampleIter() {
 		backoff.InitialDelay(50*time.Millisecond),
 		backoff.MaxDelay(1*time.Second),
 		backoff.Multiplier(2.0),
-		backoff.Jitter(false),
+		backoff.JitterFactor(0), // No jitter
 		backoff.MaxRetries(3),
 	) {
 		fmt.Printf("Waiting %v before retry\n", delay)
@@ -37,7 +37,7 @@ func ExampleRetry() {
 			return "", errors.New("temporary failure")
 		}
 		return "success", nil
-	}, backoff.InitialDelay(10*time.Millisecond), backoff.MaxRetries(3), backoff.Jitter(false))
+	}, backoff.InitialDelay(10*time.Millisecond), backoff.MaxRetries(3), backoff.JitterFactor(0))
 
 	fmt.Printf("Result: %s, Error: %v, Attempts: %d\n", result, err, attempts)
 	// Output:
@@ -49,8 +49,8 @@ func ExampleIter_infinite() {
 	for delay := range backoff.Iter(
 		backoff.InitialDelay(100*time.Millisecond),
 		backoff.MaxDelay(500*time.Millisecond),
-		backoff.Jitter(false),
-		backoff.Infinite(),
+		backoff.JitterFactor(0), // No jitter
+		// No MaxRetries specified, so it defaults to math.MaxInt (effectively infinite)
 	) {
 		fmt.Printf("Delay %d: %v\n", count+1, delay)
 		count++
@@ -67,12 +67,13 @@ func ExampleIter_infinite() {
 }
 
 func Example_customUsage() {
-	fmt.Println("Custom backoff with jitter:")
+	fmt.Println("Custom backoff with 15% jitter:")
 	count := 0
 	for delay := range backoff.Iter(
 		backoff.InitialDelay(25*time.Millisecond),
 		backoff.MaxDelay(200*time.Millisecond),
 		backoff.Multiplier(1.5),
+		backoff.JitterFactor(0.15), // 15% jitter
 		backoff.MaxRetries(4),
 	) {
 		fmt.Printf("Attempt %d: ~%v\n", count+1, delay.Round(time.Millisecond))

@@ -34,7 +34,7 @@ func TestOptions(t *testing.T) {
 		InitialDelay(50*time.Millisecond),
 		MaxDelay(1*time.Second),
 		Multiplier(1.5),
-		Jitter(false),
+		JitterFactor(0), // No jitter
 		MaxRetries(3),
 	) {
 		delays = append(delays, delay)
@@ -70,7 +70,7 @@ func TestIteratorWithoutJitter(t *testing.T) {
 		InitialDelay(100*time.Millisecond),
 		MaxDelay(1*time.Second),
 		Multiplier(2.0),
-		Jitter(false),
+		JitterFactor(0), // No jitter
 		MaxRetries(4),
 	) {
 		actual = append(actual, delay)
@@ -100,7 +100,7 @@ func TestIteratorWithMaxDelay(t *testing.T) {
 		InitialDelay(100*time.Millisecond),
 		MaxDelay(300*time.Millisecond),
 		Multiplier(2.0),
-		Jitter(false),
+		JitterFactor(0), // No jitter
 		MaxRetries(4),
 	) {
 		actual = append(actual, delay)
@@ -123,7 +123,7 @@ func TestIteratorWithJitter(t *testing.T) {
 		InitialDelay(100*time.Millisecond),
 		MaxDelay(1*time.Second),
 		Multiplier(2.0),
-		Jitter(true),
+		JitterFactor(0.1), // 10% jitter
 		MaxRetries(3),
 	) {
 		delays = append(delays, delay)
@@ -162,8 +162,8 @@ func TestInfiniteIterator(t *testing.T) {
 		InitialDelay(50*time.Millisecond),
 		MaxDelay(200*time.Millisecond),
 		Multiplier(2.0),
-		Jitter(false),
-		Infinite(),
+		JitterFactor(0), // No jitter
+		// No MaxRetries specified, so it defaults to math.MaxInt (effectively infinite)
 	) {
 		actual = append(actual, delay)
 		count++
@@ -192,7 +192,7 @@ func TestRetrySuccess(t *testing.T) {
 			return "", errors.New("temporary failure")
 		}
 		return "success", nil
-	}, InitialDelay(1*time.Millisecond), MaxRetries(3), Jitter(false))
+	}, InitialDelay(1*time.Millisecond), MaxRetries(3), JitterFactor(0))
 	
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -211,7 +211,7 @@ func TestRetryFailure(t *testing.T) {
 	result, err := Retry(func() (int, error) {
 		attempts++
 		return 0, errors.New("persistent failure")
-	}, InitialDelay(1*time.Millisecond), MaxRetries(2), Jitter(false))
+	}, InitialDelay(1*time.Millisecond), MaxRetries(2), JitterFactor(0))
 	
 	if err == nil {
 		t.Errorf("Expected error, got nil")
