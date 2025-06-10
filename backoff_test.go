@@ -379,6 +379,7 @@ func TestUserOptionsOverrideDefaults(t *testing.T) {
 	for delay := range Iter(
 		InitialDelay(200*time.Millisecond),
 		Multiplier(3.0), // Not exponential default of 2.0
+		JitterFactor(0), // Disable jitter for exact testing
 		MaxRetries(2),
 	) {
 		delays = append(delays, delay)
@@ -435,20 +436,20 @@ func TestExponentialBackoff(t *testing.T) {
 		delays = append(delays, delay)
 	}
 
-	expected := []time.Duration{
-		100 * time.Millisecond,
-		200 * time.Millisecond,
-		400 * time.Millisecond,
-		800 * time.Millisecond,
+	if len(delays) != 4 {
+		t.Fatalf("Expected 4 delays, got %d", len(delays))
 	}
 
-	if len(delays) != len(expected) {
-		t.Fatalf("Expected %d delays, got %d", len(expected), len(delays))
-	}
+	// With 10% jitter, delays should be roughly around expected values but not exact
+	baseDelays := []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond, 800 * time.Millisecond}
 
-	for i, expectedDelay := range expected {
-		if delays[i] != expectedDelay {
-			t.Errorf("Delay %d: expected %v, got %v", i, expectedDelay, delays[i])
+	for i, delay := range delays {
+		base := baseDelays[i]
+		minDelay := time.Duration(float64(base) * 0.9)
+		maxDelay := time.Duration(float64(base) * 1.1)
+
+		if delay < minDelay || delay > maxDelay {
+			t.Errorf("Delay %d: %v is outside expected jitter range [%v, %v]", i, delay, minDelay, maxDelay)
 		}
 	}
 }

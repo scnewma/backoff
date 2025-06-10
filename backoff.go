@@ -95,13 +95,13 @@ func Constant() Option {
 }
 
 // Exponential returns an Option that configures an exponential backoff strategy.
-// Uses sensible defaults: 100ms initial delay, 30s max delay, 2.0 multiplier, no jitter.
+// Uses sensible defaults: 100ms initial delay, 30s max delay, 2.0 multiplier, 10% jitter.
 func Exponential() Option {
 	return func(c *config) {
 		c.initialDelay = 100 * time.Millisecond
 		c.maxDelay = 30 * time.Second
 		c.multiplier = 2.0
-		c.jitterFactor = 0.0
+		c.jitterFactor = 0.1
 	}
 }
 

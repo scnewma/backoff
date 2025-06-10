@@ -153,21 +153,18 @@ func ExampleIter_constant() {
 }
 
 func ExampleIter_exponential() {
-	fmt.Println("Exponential backoff delays:")
+	fmt.Println("Exponential backoff delays (with jitter):")
 	count := 0
 	for delay := range backoff.Iter(
 		backoff.Exponential(),
 		backoff.MaxRetries(4),
 	) {
-		fmt.Printf("Attempt %d: %v\n", count+1, delay)
+		fmt.Printf("Attempt %d: ~%v\n", count+1, delay.Round(time.Millisecond))
 		count++
+		if count >= 4 {
+			break
+		}
 	}
-	// Output:
-	// Exponential backoff delays:
-	// Attempt 1: 100ms
-	// Attempt 2: 200ms
-	// Attempt 3: 400ms
-	// Attempt 4: 800ms
 }
 
 func ExampleRetry_constantBackoff() {
