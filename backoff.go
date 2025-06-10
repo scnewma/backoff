@@ -8,6 +8,26 @@ import (
 	"time"
 )
 
+// CancelError wraps an error to indicate that retries should be cancelled.
+// Use Cancel() to create a cancel error that will stop retries immediately.
+type CancelError struct {
+	Err error
+}
+
+func (e CancelError) Error() string {
+	return e.Err.Error()
+}
+
+func (e CancelError) Unwrap() error {
+	return e.Err
+}
+
+// Cancel wraps an error to indicate that retries should be cancelled.
+// When a function returns a cancel error, retries will stop immediately.
+func Cancel(err error) error {
+	return CancelError{Err: err}
+}
+
 type Option func(*config)
 
 type config struct {
@@ -124,6 +144,11 @@ func RetryWithContext[T any](ctx context.Context, fn func() (T, error), options 
 		return result, nil
 	}
 
+	// Check if the initial error is a cancel error
+	if _, ok := lastErr.(CancelError); ok {
+		return result, lastErr
+	}
+
 	for delay := range Iter(options...) {
 		select {
 		case <-ctx.Done():
@@ -132,6 +157,10 @@ func RetryWithContext[T any](ctx context.Context, fn func() (T, error), options 
 			result, lastErr = fn()
 			if lastErr == nil {
 				return result, nil
+			}
+			// Check if the error is a cancel error and stop retrying
+			if _, ok := lastErr.(CancelError); ok {
+				return result, lastErr
 			}
 		}
 	}

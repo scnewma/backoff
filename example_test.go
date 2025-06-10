@@ -10,6 +10,7 @@ import (
 	"github.com/scnewma/backoff"
 )
 
+
 func ExampleIter() {
 	fmt.Println("Backoff delays:")
 	for delay := range backoff.Iter(
@@ -114,5 +115,24 @@ func ExampleRetryWithContext() {
 	} else {
 		fmt.Printf("Result: %s, Attempts: %d\n", result, attempts)
 	}
+}
+
+func ExampleRetry_cancelError() {
+	attempts := 0
+
+	_, err := backoff.Retry(func() (string, error) {
+		attempts++
+		if attempts == 1 {
+			return "", errors.New("network timeout") // recoverable error, will retry
+		}
+		if attempts == 2 {
+			return "", backoff.Cancel(errors.New("invalid credentials")) // cancel, stops immediately
+		}
+		return "success", nil // this will never be reached
+	}, backoff.InitialDelay(10*time.Millisecond), backoff.MaxRetries(5))
+
+	fmt.Printf("Stopped after %d attempts due to cancel error: %v\n", attempts, err)
+	// Output:
+	// Stopped after 2 attempts due to cancel error: invalid credentials
 }
 

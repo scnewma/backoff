@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+
 func TestDefaults(t *testing.T) {
 	var delays []time.Duration
 	count := 0
@@ -293,6 +294,81 @@ func TestRetryWithContext_Success(t *testing.T) {
 		t.Errorf("Expected result 42, got %v", result)
 	}
 	if attempts != 3 {
+		t.Errorf("Expected 3 attempts, got %d", attempts)
+	}
+}
+
+func TestRetryCancelError(t *testing.T) {
+	attempts := 0
+
+	result, err := Retry(func() (string, error) {
+		attempts++
+		if attempts == 1 {
+			return "", errors.New("temporary failure")
+		}
+		return "", Cancel(errors.New("cancelled failure"))
+	}, InitialDelay(1*time.Millisecond), MaxRetries(5), JitterFactor(0))
+
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+	if err.Error() != "cancelled failure" {
+		t.Errorf("Expected 'cancelled failure', got %v", err)
+	}
+	if result != "" {
+		t.Errorf("Expected empty result, got %v", result)
+	}
+	if attempts != 2 { // initial attempt + one retry that fails with cancel error
+		t.Errorf("Expected 2 attempts, got %d", attempts)
+	}
+}
+
+func TestRetryCancelErrorOnFirstAttempt(t *testing.T) {
+	attempts := 0
+
+	result, err := Retry(func() (int, error) {
+		attempts++
+		return 0, Cancel(errors.New("immediate cancelled failure"))
+	}, InitialDelay(1*time.Millisecond), MaxRetries(3), JitterFactor(0))
+
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+	if err.Error() != "immediate cancelled failure" {
+		t.Errorf("Expected 'immediate cancelled failure', got %v", err)
+	}
+	if result != 0 {
+		t.Errorf("Expected result 0, got %v", result)
+	}
+	if attempts != 1 { // should stop immediately without retries
+		t.Errorf("Expected 1 attempt, got %d", attempts)
+	}
+}
+
+func TestRetryWithContextCancelError(t *testing.T) {
+	attempts := 0
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	result, err := RetryWithContext(ctx, func() (bool, error) {
+		attempts++
+		if attempts < 3 {
+			return false, errors.New("temporary failure")
+		}
+		return false, Cancel(errors.New("context cancelled failure"))
+	}, InitialDelay(1*time.Millisecond), MaxRetries(10))
+
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+	if err.Error() != "context cancelled failure" {
+		t.Errorf("Expected 'context cancelled failure', got %v", err)
+	}
+	if result != false {
+		t.Errorf("Expected result false, got %v", result)
+	}
+	if attempts != 3 { // 2 temporary failures + 1 cancelled
 		t.Errorf("Expected 3 attempts, got %d", attempts)
 	}
 }
