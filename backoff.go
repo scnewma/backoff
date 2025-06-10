@@ -38,16 +38,6 @@ type config struct {
 	maxRetries   int
 }
 
-func defaultConfig() *config {
-	return &config{
-		initialDelay: 100 * time.Millisecond,
-		maxDelay:     30 * time.Second,
-		multiplier:   2.0,
-		jitterFactor: 0.0,
-		maxRetries:   math.MaxInt,
-	}
-}
-
 func InitialDelay(d time.Duration) Option {
 	return func(c *config) {
 		if d <= 0 {
@@ -93,10 +83,39 @@ func MaxRetries(retries int) Option {
 	}
 }
 
+// Constant returns an Option that configures a constant backoff strategy.
+// All retry delays will be the same duration (default 1 second).
+func Constant() Option {
+	return func(c *config) {
+		c.initialDelay = 1 * time.Second
+		c.maxDelay = 1 * time.Second
+		c.multiplier = 1.0
+		c.jitterFactor = 0.0
+	}
+}
+
+// Exponential returns an Option that configures an exponential backoff strategy.
+// Uses sensible defaults: 100ms initial delay, 30s max delay, 2.0 multiplier, no jitter.
+func Exponential() Option {
+	return func(c *config) {
+		c.initialDelay = 100 * time.Millisecond
+		c.maxDelay = 30 * time.Second
+		c.multiplier = 2.0
+		c.jitterFactor = 0.0
+	}
+}
+
 func Iter(options ...Option) iter.Seq[time.Duration] {
-	cfg := defaultConfig()
-	for _, opt := range options {
-		opt(cfg)
+	cfg := &config{
+		maxRetries: math.MaxInt,
+	}
+
+	if len(options) == 0 {
+		Exponential()(cfg)
+	} else {
+		for _, opt := range options {
+			opt(cfg)
+		}
 	}
 
 	return func(yield func(time.Duration) bool) {

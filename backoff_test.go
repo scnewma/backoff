@@ -373,3 +373,82 @@ func TestRetryWithContextCancelError(t *testing.T) {
 	}
 }
 
+func TestConstantBackoff(t *testing.T) {
+	var delays []time.Duration
+	for delay := range Iter(
+		Constant(),
+		MaxRetries(3),
+	) {
+		delays = append(delays, delay)
+	}
+
+	expected := []time.Duration{
+		1 * time.Second,
+		1 * time.Second,
+		1 * time.Second,
+	}
+
+	if len(delays) != len(expected) {
+		t.Fatalf("Expected %d delays, got %d", len(expected), len(delays))
+	}
+
+	for i, expectedDelay := range expected {
+		if delays[i] != expectedDelay {
+			t.Errorf("Delay %d: expected %v, got %v", i, expectedDelay, delays[i])
+		}
+	}
+}
+
+func TestExponentialBackoff(t *testing.T) {
+	var delays []time.Duration
+	for delay := range Iter(
+		Exponential(),
+		MaxRetries(4),
+	) {
+		delays = append(delays, delay)
+	}
+
+	expected := []time.Duration{
+		100 * time.Millisecond,
+		200 * time.Millisecond,
+		400 * time.Millisecond,
+		800 * time.Millisecond,
+	}
+
+	if len(delays) != len(expected) {
+		t.Fatalf("Expected %d delays, got %d", len(expected), len(delays))
+	}
+
+	for i, expectedDelay := range expected {
+		if delays[i] != expectedDelay {
+			t.Errorf("Delay %d: expected %v, got %v", i, expectedDelay, delays[i])
+		}
+	}
+}
+
+func TestConstantWithCustomDelay(t *testing.T) {
+	var delays []time.Duration
+	for delay := range Iter(
+		Constant(),
+		InitialDelay(500*time.Millisecond), // Override the constant delay
+		MaxRetries(2),
+	) {
+		delays = append(delays, delay)
+	}
+
+	expected := []time.Duration{
+		500 * time.Millisecond,
+		500 * time.Millisecond,
+	}
+
+	if len(delays) != len(expected) {
+		t.Fatalf("Expected %d delays, got %d", len(expected), len(delays))
+	}
+
+	for i, expectedDelay := range expected {
+		if delays[i] != expectedDelay {
+			t.Errorf("Delay %d: expected %v, got %v", i, expectedDelay, delays[i])
+		}
+	}
+}
+

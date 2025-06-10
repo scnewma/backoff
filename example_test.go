@@ -136,3 +136,54 @@ func ExampleRetry_cancelError() {
 	// Stopped after 2 attempts due to cancel error: invalid credentials
 }
 
+func ExampleIter_constant() {
+	fmt.Println("Constant backoff delays:")
+	count := 0
+	for delay := range backoff.Iter(
+		backoff.Constant(),
+		backoff.MaxRetries(3),
+	) {
+		fmt.Printf("Attempt %d: %v\n", count+1, delay)
+		count++
+	}
+	// Output:
+	// Constant backoff delays:
+	// Attempt 1: 1s
+	// Attempt 2: 1s
+	// Attempt 3: 1s
+}
+
+func ExampleIter_exponential() {
+	fmt.Println("Exponential backoff delays:")
+	count := 0
+	for delay := range backoff.Iter(
+		backoff.Exponential(),
+		backoff.MaxRetries(4),
+	) {
+		fmt.Printf("Attempt %d: %v\n", count+1, delay)
+		count++
+	}
+	// Output:
+	// Exponential backoff delays:
+	// Attempt 1: 100ms
+	// Attempt 2: 200ms
+	// Attempt 3: 400ms
+	// Attempt 4: 800ms
+}
+
+func ExampleRetry_constantBackoff() {
+	attempts := 0
+
+	result, err := backoff.Retry(func() (string, error) {
+		attempts++
+		if attempts < 3 {
+			return "", errors.New("temporary failure")
+		}
+		return "success", nil
+	}, backoff.Constant(), backoff.MaxRetries(5))
+
+	fmt.Printf("Result: %s, Error: %v, Attempts: %d\n", result, err, attempts)
+	// Output:
+	// Result: success, Error: <nil>, Attempts: 3
+}
+
