@@ -109,13 +109,11 @@ func Iter(options ...Option) iter.Seq[time.Duration] {
 	cfg := &config{
 		maxRetries: math.MaxInt,
 	}
+	Exponential()(cfg)
 
-	if len(options) == 0 {
-		Exponential()(cfg)
-	} else {
-		for _, opt := range options {
-			opt(cfg)
-		}
+	// Apply user options to override defaults
+	for _, opt := range options {
+		opt(cfg)
 	}
 
 	return func(yield func(time.Duration) bool) {

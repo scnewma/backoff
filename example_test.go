@@ -10,7 +10,6 @@ import (
 	"github.com/scnewma/backoff"
 )
 
-
 func ExampleIter() {
 	fmt.Println("Backoff delays:")
 	for delay := range backoff.Iter(
@@ -186,4 +185,3 @@ func ExampleRetry_constantBackoff() {
 	// Output:
 	// Result: success, Error: <nil>, Attempts: 3
 }
-
