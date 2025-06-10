@@ -1,6 +1,7 @@
 package backoff_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -101,4 +102,70 @@ func Example_networkRetry() {
 	if err != nil {
 		fmt.Printf("All retries failed: %v\n", err)
 	}
+}
+
+func ExampleConfig_IteratorWithContext() {
+	config := backoff.NewConfig().
+		WithInitialDelay(10 * time.Millisecond).
+		WithMaxDelay(100 * time.Millisecond).
+		WithJitter(false).
+		WithMaxRetries(5)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	fmt.Println("Context-aware backoff (will timeout):")
+	for delay := range config.IteratorWithContext(ctx) {
+		fmt.Printf("Delay: %v\n", delay)
+	}
+	fmt.Println("Iterator stopped due to context cancellation")
+}
+
+func ExampleRetryWithContext() {
+	attempts := 0
+	config := backoff.NewConfig().
+		WithInitialDelay(5 * time.Millisecond).
+		WithMaxRetries(10)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+
+	result, err := backoff.RetryWithContext(ctx, config, func() (string, error) {
+		attempts++
+		if attempts < 5 {
+			return "", errors.New("temporary failure")
+		}
+		return "success", nil
+	})
+
+	if err == context.DeadlineExceeded {
+		fmt.Printf("Operation timed out after %d attempts\n", attempts)
+	} else {
+		fmt.Printf("Result: %s, Attempts: %d\n", result, attempts)
+	}
+}
+
+func Example_contextCancellation() {
+	config := backoff.NewConfig().
+		WithInitialDelay(20 * time.Millisecond).
+		WithJitter(false)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		time.Sleep(35 * time.Millisecond)
+		fmt.Println("Cancelling context...")
+		cancel()
+	}()
+
+	fmt.Println("Starting infinite iterator with context:")
+	count := 0
+	for delay := range config.InfiniteIteratorWithContext(ctx) {
+		count++
+		fmt.Printf("Iteration %d: %v\n", count, delay)
+		if count > 10 { // Safety valve
+			break
+		}
+	}
+	fmt.Println("Iterator terminated")
 }

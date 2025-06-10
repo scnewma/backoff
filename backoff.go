@@ -1,6 +1,7 @@
 package backoff
 
 import (
+	"context"
 	"iter"
 	"math/rand/v2"
 	"time"
@@ -62,6 +63,10 @@ func (c *Config) WithMaxRetries(retries int) *Config {
 }
 
 func (c *Config) Iterator() iter.Seq[time.Duration] {
+	return c.IteratorWithContext(context.Background())
+}
+
+func (c *Config) IteratorWithContext(ctx context.Context) iter.Seq[time.Duration] {
 	return func(yield func(time.Duration) bool) {
 		delay := c.InitialDelay
 		if c.MaxDelay < c.InitialDelay {
@@ -69,6 +74,12 @@ func (c *Config) Iterator() iter.Seq[time.Duration] {
 		}
 		
 		for attempt := 0; attempt < c.MaxRetries; attempt++ {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			
 			currentDelay := delay
 			
 			if c.Jitter {
@@ -96,6 +107,10 @@ func (c *Config) Iterator() iter.Seq[time.Duration] {
 }
 
 func (c *Config) InfiniteIterator() iter.Seq[time.Duration] {
+	return c.InfiniteIteratorWithContext(context.Background())
+}
+
+func (c *Config) InfiniteIteratorWithContext(ctx context.Context) iter.Seq[time.Duration] {
 	return func(yield func(time.Duration) bool) {
 		delay := c.InitialDelay
 		if c.MaxDelay < c.InitialDelay {
@@ -103,6 +118,12 @@ func (c *Config) InfiniteIterator() iter.Seq[time.Duration] {
 		}
 		
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			
 			currentDelay := delay
 			
 			if c.Jitter {
@@ -130,6 +151,10 @@ func (c *Config) InfiniteIterator() iter.Seq[time.Duration] {
 }
 
 func Retry[T any](config *Config, fn func() (T, error)) (T, error) {
+	return RetryWithContext(context.Background(), config, fn)
+}
+
+func RetryWithContext[T any](ctx context.Context, config *Config, fn func() (T, error)) (T, error) {
 	var lastErr error
 	var result T
 	
@@ -138,11 +163,15 @@ func Retry[T any](config *Config, fn func() (T, error)) (T, error) {
 		return result, nil
 	}
 	
-	for delay := range config.Iterator() {
-		time.Sleep(delay)
-		result, lastErr = fn()
-		if lastErr == nil {
-			return result, nil
+	for delay := range config.IteratorWithContext(ctx) {
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		case <-time.After(delay):
+			result, lastErr = fn()
+			if lastErr == nil {
+				return result, nil
+			}
 		}
 	}
 	

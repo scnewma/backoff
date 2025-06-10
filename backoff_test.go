@@ -1,6 +1,7 @@
 package backoff
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -249,5 +250,126 @@ func TestRetryImmediateSuccess(t *testing.T) {
 	}
 	if attempts != 1 {
 		t.Errorf("Expected 1 attempt, got %d", attempts)
+	}
+}
+
+func TestIteratorWithContext_Cancellation(t *testing.T) {
+	config := NewConfig().
+		WithInitialDelay(1 * time.Millisecond).
+		WithMaxRetries(10).
+		WithJitter(false)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	var delays []time.Duration
+	go func() {
+		time.Sleep(5 * time.Millisecond) // Cancel quickly
+		cancel()
+	}()
+	
+	for delay := range config.IteratorWithContext(ctx) {
+		delays = append(delays, delay)
+		time.Sleep(delay) // Simulate actual delay usage
+	}
+	
+	// Should have stopped early due to cancellation
+	if len(delays) >= 10 {
+		t.Errorf("Expected fewer than 10 delays due to cancellation, got %d", len(delays))
+	}
+}
+
+func TestInfiniteIteratorWithContext_Cancellation(t *testing.T) {
+	config := NewConfig().
+		WithInitialDelay(1 * time.Millisecond).
+		WithJitter(false)
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	
+	var delays []time.Duration
+	for delay := range config.InfiniteIteratorWithContext(ctx) {
+		delays = append(delays, delay)
+		time.Sleep(delay) // Simulate using the delay
+		if len(delays) >= 100 { // Safety valve
+			t.Fatal("Iterator should have been cancelled by context")
+		}
+	}
+	
+	// Should have stopped due to timeout
+	if len(delays) == 0 {
+		t.Errorf("Expected at least 1 delay before timeout, got %d", len(delays))
+	}
+}
+
+func TestRetryWithContext_Cancellation(t *testing.T) {
+	attempts := 0
+	config := NewConfig().
+		WithInitialDelay(10 * time.Millisecond).
+		WithMaxRetries(5)
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	
+	result, err := RetryWithContext(ctx, config, func() (string, error) {
+		attempts++
+		return "", errors.New("always fails")
+	})
+	
+	if err != context.DeadlineExceeded {
+		t.Errorf("Expected DeadlineExceeded error, got %v", err)
+	}
+	if result != "" {
+		t.Errorf("Expected empty result, got %v", result)
+	}
+	// Should have made some attempts but not all 6 (initial + 5 retries)
+	if attempts == 0 {
+		t.Errorf("Expected at least 1 attempt, got %d", attempts)
+	}
+	if attempts > 6 {
+		t.Errorf("Expected at most 6 attempts, got %d", attempts)
+	}
+}
+
+func TestRetryWithContext_Success(t *testing.T) {
+	attempts := 0
+	config := NewConfig().
+		WithInitialDelay(1 * time.Millisecond).
+		WithMaxRetries(3)
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	
+	result, err := RetryWithContext(ctx, config, func() (int, error) {
+		attempts++
+		if attempts < 3 {
+			return 0, errors.New("temporary failure")
+		}
+		return 42, nil
+	})
+	
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if result != 42 {
+		t.Errorf("Expected result 42, got %v", result)
+	}
+	if attempts != 3 {
+		t.Errorf("Expected 3 attempts, got %d", attempts)
+	}
+}
+
+func TestIteratorWithContext_ImmediateCancellation(t *testing.T) {
+	config := NewConfig().WithMaxRetries(3)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+	
+	var delays []time.Duration
+	for delay := range config.IteratorWithContext(ctx) {
+		delays = append(delays, delay)
+	}
+	
+	if len(delays) != 0 {
+		t.Errorf("Expected 0 delays with immediately cancelled context, got %d", len(delays))
 	}
 }
