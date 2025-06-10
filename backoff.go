@@ -7,154 +7,127 @@ import (
 	"time"
 )
 
-type Config struct {
-	InitialDelay time.Duration
-	MaxDelay     time.Duration
-	Multiplier   float64
-	Jitter       bool
-	MaxRetries   int
+type Option func(*config)
+
+type config struct {
+	initialDelay time.Duration
+	maxDelay     time.Duration
+	multiplier   float64
+	jitter       bool
+	maxRetries   int
+	infinite     bool
 }
 
-func NewConfig() *Config {
-	return &Config{
-		InitialDelay: 100 * time.Millisecond,
-		MaxDelay:     30 * time.Second,
-		Multiplier:   2.0,
-		Jitter:       true,
-		MaxRetries:   10,
+func defaultConfig() *config {
+	return &config{
+		initialDelay: 100 * time.Millisecond,
+		maxDelay:     30 * time.Second,
+		multiplier:   2.0,
+		jitter:       true,
+		maxRetries:   10,
+		infinite:     false,
 	}
 }
 
-func (c *Config) WithInitialDelay(d time.Duration) *Config {
-	if d <= 0 {
-		d = 1 * time.Millisecond
+func InitialDelay(d time.Duration) Option {
+	return func(c *config) {
+		if d <= 0 {
+			d = 1 * time.Millisecond
+		}
+		c.initialDelay = d
 	}
-	c.InitialDelay = d
-	return c
 }
 
-func (c *Config) WithMaxDelay(d time.Duration) *Config {
-	if d <= 0 {
-		d = 30 * time.Second
+func MaxDelay(d time.Duration) Option {
+	return func(c *config) {
+		if d <= 0 {
+			d = 30 * time.Second
+		}
+		c.maxDelay = d
 	}
-	c.MaxDelay = d
-	return c
 }
 
-func (c *Config) WithMultiplier(m float64) *Config {
-	if m <= 1.0 {
-		m = 2.0
+func Multiplier(m float64) Option {
+	return func(c *config) {
+		if m <= 1.0 {
+			m = 2.0
+		}
+		c.multiplier = m
 	}
-	c.Multiplier = m
-	return c
 }
 
-func (c *Config) WithJitter(enabled bool) *Config {
-	c.Jitter = enabled
-	return c
-}
-
-func (c *Config) WithMaxRetries(retries int) *Config {
-	if retries < 0 {
-		retries = 0
+func Jitter(enabled bool) Option {
+	return func(c *config) {
+		c.jitter = enabled
 	}
-	c.MaxRetries = retries
-	return c
 }
 
-func (c *Config) Iterator() iter.Seq[time.Duration] {
-	return c.IteratorWithContext(context.Background())
+func MaxRetries(retries int) Option {
+	return func(c *config) {
+		if retries < 0 {
+			retries = 0
+		}
+		c.maxRetries = retries
+	}
 }
 
-func (c *Config) IteratorWithContext(ctx context.Context) iter.Seq[time.Duration] {
+func Infinite() Option {
+	return func(c *config) {
+		c.infinite = true
+	}
+}
+
+func Iter(options ...Option) iter.Seq[time.Duration] {
+	cfg := defaultConfig()
+	for _, opt := range options {
+		opt(cfg)
+	}
+	
 	return func(yield func(time.Duration) bool) {
-		delay := c.InitialDelay
-		if c.MaxDelay < c.InitialDelay {
-			c.MaxDelay = c.InitialDelay
+		delay := cfg.initialDelay
+		if cfg.maxDelay < cfg.initialDelay {
+			cfg.maxDelay = cfg.initialDelay
 		}
 		
-		for attempt := 0; attempt < c.MaxRetries; attempt++ {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-			
-			currentDelay := delay
-			
-			if c.Jitter {
-				jitterRange := float64(delay) * 0.1
-				jitter := (rand.Float64() - 0.5) * 2 * jitterRange
-				currentDelay = time.Duration(float64(delay) + jitter)
-			}
-			
-			if currentDelay > c.MaxDelay {
-				currentDelay = c.MaxDelay
-			}
-			
-			if !yield(currentDelay) {
-				return
-			}
-			
-			nextDelay := time.Duration(float64(delay) * c.Multiplier)
-			if nextDelay > c.MaxDelay {
-				delay = c.MaxDelay
-			} else {
-				delay = nextDelay
-			}
-		}
-	}
-}
-
-func (c *Config) InfiniteIterator() iter.Seq[time.Duration] {
-	return c.InfiniteIteratorWithContext(context.Background())
-}
-
-func (c *Config) InfiniteIteratorWithContext(ctx context.Context) iter.Seq[time.Duration] {
-	return func(yield func(time.Duration) bool) {
-		delay := c.InitialDelay
-		if c.MaxDelay < c.InitialDelay {
-			c.MaxDelay = c.InitialDelay
-		}
-		
+		attempt := 0
 		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
+			if !cfg.infinite && attempt >= cfg.maxRetries {
+				break
 			}
 			
 			currentDelay := delay
 			
-			if c.Jitter {
+			if cfg.jitter {
 				jitterRange := float64(delay) * 0.1
 				jitter := (rand.Float64() - 0.5) * 2 * jitterRange
 				currentDelay = time.Duration(float64(delay) + jitter)
 			}
 			
-			if currentDelay > c.MaxDelay {
-				currentDelay = c.MaxDelay
+			if currentDelay > cfg.maxDelay {
+				currentDelay = cfg.maxDelay
 			}
 			
 			if !yield(currentDelay) {
 				return
 			}
 			
-			nextDelay := time.Duration(float64(delay) * c.Multiplier)
-			if nextDelay > c.MaxDelay {
-				delay = c.MaxDelay
+			nextDelay := time.Duration(float64(delay) * cfg.multiplier)
+			if nextDelay > cfg.maxDelay {
+				delay = cfg.maxDelay
 			} else {
 				delay = nextDelay
 			}
+			
+			attempt++
 		}
 	}
 }
 
-func Retry[T any](config *Config, fn func() (T, error)) (T, error) {
-	return RetryWithContext(context.Background(), config, fn)
+func Retry[T any](fn func() (T, error), options ...Option) (T, error) {
+	return RetryWithContext(context.Background(), fn, options...)
 }
 
-func RetryWithContext[T any](ctx context.Context, config *Config, fn func() (T, error)) (T, error) {
+func RetryWithContext[T any](ctx context.Context, fn func() (T, error), options ...Option) (T, error) {
 	var lastErr error
 	var result T
 	
@@ -163,7 +136,7 @@ func RetryWithContext[T any](ctx context.Context, config *Config, fn func() (T, 
 		return result, nil
 	}
 	
-	for delay := range config.IteratorWithContext(ctx) {
+	for delay := range Iter(options...) {
 		select {
 		case <-ctx.Done():
 			return result, ctx.Err()

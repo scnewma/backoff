@@ -10,16 +10,15 @@ import (
 	"github.com/scnewma/backoff"
 )
 
-func ExampleConfig_Iterator() {
-	config := backoff.NewConfig().
-		WithInitialDelay(50 * time.Millisecond).
-		WithMaxDelay(1 * time.Second).
-		WithMultiplier(2.0).
-		WithJitter(false).
-		WithMaxRetries(3)
-
+func ExampleIter() {
 	fmt.Println("Backoff delays:")
-	for delay := range config.Iterator() {
+	for delay := range backoff.Iter(
+		backoff.InitialDelay(50*time.Millisecond),
+		backoff.MaxDelay(1*time.Second),
+		backoff.Multiplier(2.0),
+		backoff.Jitter(false),
+		backoff.MaxRetries(3),
+	) {
 		fmt.Printf("Waiting %v before retry\n", delay)
 	}
 	// Output:
@@ -31,32 +30,28 @@ func ExampleConfig_Iterator() {
 
 func ExampleRetry() {
 	attempts := 0
-	config := backoff.NewConfig().
-		WithInitialDelay(10 * time.Millisecond).
-		WithMaxRetries(3).
-		WithJitter(false)
 
-	result, err := backoff.Retry(config, func() (string, error) {
+	result, err := backoff.Retry(func() (string, error) {
 		attempts++
 		if attempts < 3 {
 			return "", errors.New("temporary failure")
 		}
 		return "success", nil
-	})
+	}, backoff.InitialDelay(10*time.Millisecond), backoff.MaxRetries(3), backoff.Jitter(false))
 
 	fmt.Printf("Result: %s, Error: %v, Attempts: %d\n", result, err, attempts)
 	// Output:
 	// Result: success, Error: <nil>, Attempts: 3
 }
 
-func ExampleConfig_InfiniteIterator() {
-	config := backoff.NewConfig().
-		WithInitialDelay(100 * time.Millisecond).
-		WithMaxDelay(500 * time.Millisecond).
-		WithJitter(false)
-
+func ExampleIter_infinite() {
 	count := 0
-	for delay := range config.InfiniteIterator() {
+	for delay := range backoff.Iter(
+		backoff.InitialDelay(100*time.Millisecond),
+		backoff.MaxDelay(500*time.Millisecond),
+		backoff.Jitter(false),
+		backoff.Infinite(),
+	) {
 		fmt.Printf("Delay %d: %v\n", count+1, delay)
 		count++
 		if count >= 5 {
@@ -72,14 +67,14 @@ func ExampleConfig_InfiniteIterator() {
 }
 
 func Example_customUsage() {
-	config := backoff.NewConfig().
-		WithInitialDelay(25 * time.Millisecond).
-		WithMaxDelay(200 * time.Millisecond).
-		WithMultiplier(1.5)
-
 	fmt.Println("Custom backoff with jitter:")
 	count := 0
-	for delay := range config.Iterator() {
+	for delay := range backoff.Iter(
+		backoff.InitialDelay(25*time.Millisecond),
+		backoff.MaxDelay(200*time.Millisecond),
+		backoff.Multiplier(1.5),
+		backoff.MaxRetries(4),
+	) {
 		fmt.Printf("Attempt %d: ~%v\n", count+1, delay.Round(time.Millisecond))
 		count++
 		if count >= 4 {
@@ -89,54 +84,29 @@ func Example_customUsage() {
 }
 
 func Example_networkRetry() {
-	config := backoff.NewConfig().
-		WithInitialDelay(100 * time.Millisecond).
-		WithMaxDelay(5 * time.Second).
-		WithMaxRetries(5)
-
-	_, err := backoff.Retry(config, func() ([]byte, error) {
+	_, err := backoff.Retry(func() ([]byte, error) {
 		log.Println("Attempting network request...")
 		return nil, errors.New("network timeout")
-	})
+	}, backoff.InitialDelay(100*time.Millisecond), backoff.MaxDelay(5*time.Second), backoff.MaxRetries(5))
 
 	if err != nil {
 		fmt.Printf("All retries failed: %v\n", err)
 	}
 }
 
-func ExampleConfig_IteratorWithContext() {
-	config := backoff.NewConfig().
-		WithInitialDelay(10 * time.Millisecond).
-		WithMaxDelay(100 * time.Millisecond).
-		WithJitter(false).
-		WithMaxRetries(5)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	fmt.Println("Context-aware backoff (will timeout):")
-	for delay := range config.IteratorWithContext(ctx) {
-		fmt.Printf("Delay: %v\n", delay)
-	}
-	fmt.Println("Iterator stopped due to context cancellation")
-}
-
 func ExampleRetryWithContext() {
 	attempts := 0
-	config := backoff.NewConfig().
-		WithInitialDelay(5 * time.Millisecond).
-		WithMaxRetries(10)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
 
-	result, err := backoff.RetryWithContext(ctx, config, func() (string, error) {
+	result, err := backoff.RetryWithContext(ctx, func() (string, error) {
 		attempts++
 		if attempts < 5 {
 			return "", errors.New("temporary failure")
 		}
 		return "success", nil
-	})
+	}, backoff.InitialDelay(5*time.Millisecond), backoff.MaxRetries(10))
 
 	if err == context.DeadlineExceeded {
 		fmt.Printf("Operation timed out after %d attempts\n", attempts)
@@ -145,27 +115,3 @@ func ExampleRetryWithContext() {
 	}
 }
 
-func Example_contextCancellation() {
-	config := backoff.NewConfig().
-		WithInitialDelay(20 * time.Millisecond).
-		WithJitter(false)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		time.Sleep(35 * time.Millisecond)
-		fmt.Println("Cancelling context...")
-		cancel()
-	}()
-
-	fmt.Println("Starting infinite iterator with context:")
-	count := 0
-	for delay := range config.InfiniteIteratorWithContext(ctx) {
-		count++
-		fmt.Printf("Iteration %d: %v\n", count, delay)
-		if count > 10 { // Safety valve
-			break
-		}
-	}
-	fmt.Println("Iterator terminated")
-}

@@ -7,59 +7,57 @@ import (
 	"time"
 )
 
-func TestNewConfig(t *testing.T) {
-	config := NewConfig()
+func TestDefaults(t *testing.T) {
+	var delays []time.Duration
+	count := 0
+	for delay := range Iter() {
+		delays = append(delays, delay)
+		count++
+		if count >= 3 {
+			break
+		}
+	}
 	
-	if config.InitialDelay != 100*time.Millisecond {
-		t.Errorf("Expected initial delay of 100ms, got %v", config.InitialDelay)
+	if len(delays) != 3 {
+		t.Errorf("Expected 3 delays, got %d", len(delays))
 	}
-	if config.MaxDelay != 30*time.Second {
-		t.Errorf("Expected max delay of 30s, got %v", config.MaxDelay)
-	}
-	if config.Multiplier != 2.0 {
-		t.Errorf("Expected multiplier of 2.0, got %v", config.Multiplier)
-	}
-	if !config.Jitter {
-		t.Errorf("Expected jitter to be enabled by default")
-	}
-	if config.MaxRetries != 10 {
-		t.Errorf("Expected max retries of 10, got %v", config.MaxRetries)
+	
+	// Check that delays are increasing (roughly)
+	if delays[1] <= delays[0] {
+		t.Errorf("Expected second delay to be greater than first")
 	}
 }
 
-func TestConfigChaining(t *testing.T) {
-	config := NewConfig().
-		WithInitialDelay(50 * time.Millisecond).
-		WithMaxDelay(1 * time.Second).
-		WithMultiplier(1.5).
-		WithJitter(false).
-		WithMaxRetries(5)
+func TestOptions(t *testing.T) {
+	var delays []time.Duration
+	for delay := range Iter(
+		InitialDelay(50*time.Millisecond),
+		MaxDelay(1*time.Second),
+		Multiplier(1.5),
+		Jitter(false),
+		MaxRetries(3),
+	) {
+		delays = append(delays, delay)
+	}
 	
-	if config.InitialDelay != 50*time.Millisecond {
-		t.Errorf("Expected initial delay of 50ms, got %v", config.InitialDelay)
+	expected := []time.Duration{
+		50 * time.Millisecond,
+		75 * time.Millisecond,                                       // 50 * 1.5
+		time.Duration(float64(75*time.Millisecond) * 1.5), // 75 * 1.5 = 112.5ms
 	}
-	if config.MaxDelay != 1*time.Second {
-		t.Errorf("Expected max delay of 1s, got %v", config.MaxDelay)
+	
+	if len(delays) != len(expected) {
+		t.Fatalf("Expected %d delays, got %d", len(expected), len(delays))
 	}
-	if config.Multiplier != 1.5 {
-		t.Errorf("Expected multiplier of 1.5, got %v", config.Multiplier)
-	}
-	if config.Jitter {
-		t.Errorf("Expected jitter to be disabled")
-	}
-	if config.MaxRetries != 5 {
-		t.Errorf("Expected max retries of 5, got %v", config.MaxRetries)
+	
+	for i, expectedDelay := range expected {
+		if delays[i] != expectedDelay {
+			t.Errorf("Delay %d: expected %v, got %v", i, expectedDelay, delays[i])
+		}
 	}
 }
 
 func TestIteratorWithoutJitter(t *testing.T) {
-	config := NewConfig().
-		WithInitialDelay(100 * time.Millisecond).
-		WithMaxDelay(1 * time.Second).
-		WithMultiplier(2.0).
-		WithJitter(false).
-		WithMaxRetries(4)
-	
 	expected := []time.Duration{
 		100 * time.Millisecond,
 		200 * time.Millisecond,
@@ -68,7 +66,13 @@ func TestIteratorWithoutJitter(t *testing.T) {
 	}
 	
 	var actual []time.Duration
-	for delay := range config.Iterator() {
+	for delay := range Iter(
+		InitialDelay(100*time.Millisecond),
+		MaxDelay(1*time.Second),
+		Multiplier(2.0),
+		Jitter(false),
+		MaxRetries(4),
+	) {
 		actual = append(actual, delay)
 	}
 	
@@ -84,13 +88,6 @@ func TestIteratorWithoutJitter(t *testing.T) {
 }
 
 func TestIteratorWithMaxDelay(t *testing.T) {
-	config := NewConfig().
-		WithInitialDelay(100 * time.Millisecond).
-		WithMaxDelay(300 * time.Millisecond).
-		WithMultiplier(2.0).
-		WithJitter(false).
-		WithMaxRetries(4)
-	
 	expected := []time.Duration{
 		100 * time.Millisecond,
 		200 * time.Millisecond,
@@ -99,7 +96,13 @@ func TestIteratorWithMaxDelay(t *testing.T) {
 	}
 	
 	var actual []time.Duration
-	for delay := range config.Iterator() {
+	for delay := range Iter(
+		InitialDelay(100*time.Millisecond),
+		MaxDelay(300*time.Millisecond),
+		Multiplier(2.0),
+		Jitter(false),
+		MaxRetries(4),
+	) {
 		actual = append(actual, delay)
 	}
 	
@@ -115,15 +118,14 @@ func TestIteratorWithMaxDelay(t *testing.T) {
 }
 
 func TestIteratorWithJitter(t *testing.T) {
-	config := NewConfig().
-		WithInitialDelay(100 * time.Millisecond).
-		WithMaxDelay(1 * time.Second).
-		WithMultiplier(2.0).
-		WithJitter(true).
-		WithMaxRetries(3)
-	
 	var delays []time.Duration
-	for delay := range config.Iterator() {
+	for delay := range Iter(
+		InitialDelay(100*time.Millisecond),
+		MaxDelay(1*time.Second),
+		Multiplier(2.0),
+		Jitter(true),
+		MaxRetries(3),
+	) {
 		delays = append(delays, delay)
 	}
 	
@@ -146,12 +148,6 @@ func TestIteratorWithJitter(t *testing.T) {
 }
 
 func TestInfiniteIterator(t *testing.T) {
-	config := NewConfig().
-		WithInitialDelay(50 * time.Millisecond).
-		WithMaxDelay(200 * time.Millisecond).
-		WithMultiplier(2.0).
-		WithJitter(false)
-	
 	expected := []time.Duration{
 		50 * time.Millisecond,
 		100 * time.Millisecond,
@@ -162,7 +158,13 @@ func TestInfiniteIterator(t *testing.T) {
 	
 	var actual []time.Duration
 	count := 0
-	for delay := range config.InfiniteIterator() {
+	for delay := range Iter(
+		InitialDelay(50*time.Millisecond),
+		MaxDelay(200*time.Millisecond),
+		Multiplier(2.0),
+		Jitter(false),
+		Infinite(),
+	) {
 		actual = append(actual, delay)
 		count++
 		if count >= 5 {
@@ -183,18 +185,14 @@ func TestInfiniteIterator(t *testing.T) {
 
 func TestRetrySuccess(t *testing.T) {
 	attempts := 0
-	config := NewConfig().
-		WithInitialDelay(1 * time.Millisecond).
-		WithMaxRetries(3).
-		WithJitter(false)
 	
-	result, err := Retry(config, func() (string, error) {
+	result, err := Retry(func() (string, error) {
 		attempts++
 		if attempts < 2 {
 			return "", errors.New("temporary failure")
 		}
 		return "success", nil
-	})
+	}, InitialDelay(1*time.Millisecond), MaxRetries(3), Jitter(false))
 	
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -209,15 +207,11 @@ func TestRetrySuccess(t *testing.T) {
 
 func TestRetryFailure(t *testing.T) {
 	attempts := 0
-	config := NewConfig().
-		WithInitialDelay(1 * time.Millisecond).
-		WithMaxRetries(2).
-		WithJitter(false)
 	
-	result, err := Retry(config, func() (int, error) {
+	result, err := Retry(func() (int, error) {
 		attempts++
 		return 0, errors.New("persistent failure")
-	})
+	}, InitialDelay(1*time.Millisecond), MaxRetries(2), Jitter(false))
 	
 	if err == nil {
 		t.Errorf("Expected error, got nil")
@@ -235,12 +229,11 @@ func TestRetryFailure(t *testing.T) {
 
 func TestRetryImmediateSuccess(t *testing.T) {
 	attempts := 0
-	config := NewConfig().WithMaxRetries(3)
 	
-	result, err := Retry(config, func() (bool, error) {
+	result, err := Retry(func() (bool, error) {
 		attempts++
 		return true, nil
-	})
+	}, MaxRetries(3))
 	
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -253,67 +246,16 @@ func TestRetryImmediateSuccess(t *testing.T) {
 	}
 }
 
-func TestIteratorWithContext_Cancellation(t *testing.T) {
-	config := NewConfig().
-		WithInitialDelay(1 * time.Millisecond).
-		WithMaxRetries(10).
-		WithJitter(false)
-	
-	ctx, cancel := context.WithCancel(context.Background())
-	
-	var delays []time.Duration
-	go func() {
-		time.Sleep(5 * time.Millisecond) // Cancel quickly
-		cancel()
-	}()
-	
-	for delay := range config.IteratorWithContext(ctx) {
-		delays = append(delays, delay)
-		time.Sleep(delay) // Simulate actual delay usage
-	}
-	
-	// Should have stopped early due to cancellation
-	if len(delays) >= 10 {
-		t.Errorf("Expected fewer than 10 delays due to cancellation, got %d", len(delays))
-	}
-}
-
-func TestInfiniteIteratorWithContext_Cancellation(t *testing.T) {
-	config := NewConfig().
-		WithInitialDelay(1 * time.Millisecond).
-		WithJitter(false)
-	
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-	
-	var delays []time.Duration
-	for delay := range config.InfiniteIteratorWithContext(ctx) {
-		delays = append(delays, delay)
-		time.Sleep(delay) // Simulate using the delay
-		if len(delays) >= 100 { // Safety valve
-			t.Fatal("Iterator should have been cancelled by context")
-		}
-	}
-	
-	// Should have stopped due to timeout
-	if len(delays) == 0 {
-		t.Errorf("Expected at least 1 delay before timeout, got %d", len(delays))
-	}
-}
-
 func TestRetryWithContext_Cancellation(t *testing.T) {
 	attempts := 0
-	config := NewConfig().
-		WithInitialDelay(10 * time.Millisecond).
-		WithMaxRetries(5)
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
 	
-	result, err := RetryWithContext(ctx, config, func() (string, error) {
+	result, err := RetryWithContext(ctx, func() (string, error) {
 		attempts++
 		return "", errors.New("always fails")
-	})
+	}, InitialDelay(10*time.Millisecond), MaxRetries(5))
 	
 	if err != context.DeadlineExceeded {
 		t.Errorf("Expected DeadlineExceeded error, got %v", err)
@@ -332,20 +274,17 @@ func TestRetryWithContext_Cancellation(t *testing.T) {
 
 func TestRetryWithContext_Success(t *testing.T) {
 	attempts := 0
-	config := NewConfig().
-		WithInitialDelay(1 * time.Millisecond).
-		WithMaxRetries(3)
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	
-	result, err := RetryWithContext(ctx, config, func() (int, error) {
+	result, err := RetryWithContext(ctx, func() (int, error) {
 		attempts++
 		if attempts < 3 {
 			return 0, errors.New("temporary failure")
 		}
 		return 42, nil
-	})
+	}, InitialDelay(1*time.Millisecond), MaxRetries(3))
 	
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -358,18 +297,3 @@ func TestRetryWithContext_Success(t *testing.T) {
 	}
 }
 
-func TestIteratorWithContext_ImmediateCancellation(t *testing.T) {
-	config := NewConfig().WithMaxRetries(3)
-	
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-	
-	var delays []time.Duration
-	for delay := range config.IteratorWithContext(ctx) {
-		delays = append(delays, delay)
-	}
-	
-	if len(delays) != 0 {
-		t.Errorf("Expected 0 delays with immediately cancelled context, got %d", len(delays))
-	}
-}
